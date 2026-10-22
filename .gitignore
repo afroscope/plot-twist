@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-server/
+.env
+.env.*
+!.env.example
+*.local
+*.log
+*.tsbuildinfo
+.DS_Store
+coverage/
+test-results/
+playwright-report/
+.qloo/
+*.pem
+*.key
