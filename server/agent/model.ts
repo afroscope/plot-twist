@@ -28,7 +28,17 @@ export function createOpenAIModel(options: { apiKey?: string; model?: string; fe
             tool_choice: 'required', parallel_tool_calls: false, reasoning_effort: 'none', max_completion_tokens: 2000, store: false }),
         });
         if (response.status === 401 || response.status === 403) throw new DiscoveryError('AGENT_AUTH', 503, 'The discovery agent’s model access needs attention.');
-        if (response.status === 429) throw new DiscoveryError('AGENT_RATE_LIMITED', 429, 'The discovery agent has reached its model allowance. Please try again later.');
+        if (response.status === 429) {
+          // Inspect only recognised error classifications; never expose upstream
+          // messages, which can include account identifiers or request details.
+          const body: unknown = await response.json().catch(() => null);
+          const error = z.object({ error: z.object({ code: z.string().nullable().optional(), type: z.string().optional() }) }).safeParse(body);
+          const quotaCodes = ['insufficient_quota', 'credit_balance_exhausted', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded', 'organization_usage_limit_exceeded'];
+          if (error.success && (quotaCodes.includes(error.data.error.code ?? '') || error.data.error.type === 'insufficient_quota')) {
+            throw new DiscoveryError('AGENT_QUOTA_EXHAUSTED', 503, 'OpenAI API credits or usage quota are exhausted. Check the API account’s billing and limits; retrying alone will not resolve this.');
+          }
+          throw new DiscoveryError('AGENT_RATE_LIMITED', 429, 'OpenAI is limiting model requests. Wait briefly and retry; if this persists, check the API account’s limits.');
+        }
         if (!response.ok) throw new DiscoveryError('AGENT_UNAVAILABLE', 503, 'The discovery agent is unavailable. Please try again later.');
         const parsed = z.object({ choices: z.array(z.object({ finish_reason: z.literal('tool_calls'),
           message: z.object({ tool_calls: z.array(callSchema).length(1) }) })).min(1) }).safeParse(await response.json());

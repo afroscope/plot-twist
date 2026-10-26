@@ -217,3 +217,19 @@ test('real Qloo tool adapter enforces category, exclusion and fixed endpoint bou
   await assert.rejects(qloo.recommend({ medium: 'Music', signalIds: [id(999)], excludeIds: [], offset: 0 }), { code: 'INVALID_TOOL_INPUT' });
   assert.equal(count, 2);
 });
+test('model quota exhaustion is distinguished from temporary rate limiting without exposing upstream details', async () => {
+  for (const error of [{ code: 'insufficient_quota', type: 'insufficient_quota' }, { code: null, type: 'insufficient_quota' },
+    ...['credit_balance_exhausted', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded', 'organization_usage_limit_exceeded'].map(code => ({ code, type: 'quota' })),
+    { code: 'rate_limit_exceeded', type: 'requests' }]) {
+    let count = 0;
+    const model = createOpenAIModel({ apiKey: 'fixture-secret', fetch: async () => {
+      count++; return Response.json({ error: { ...error, message: 'private-account-value' } }, { status: 429 });
+    } });
+    await assert.rejects(model.next([], [], new AbortController().signal), caught => {
+      assert(caught instanceof DiscoveryError);
+      assert.equal(caught.code, error.type !== 'requests' ? 'AGENT_QUOTA_EXHAUSTED' : 'AGENT_RATE_LIMITED');
+      assert(!caught.message.includes('private-account-value')); return true;
+    });
+    assert.equal(count, 1);
+  }
+});

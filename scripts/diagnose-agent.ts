@@ -20,6 +20,6 @@ if (!agent.configured) {
     console.log(JSON.stringify({ method: journey.method, journeyStatus: journey.status, categories: journey.stops.map(stop => stop.medium) }));
     if (journey.status !== 'ok') process.exitCode = 1;
   } catch (error) {
-    console.error(JSON.stringify({ error: error instanceof DiscoveryError ? error.code : 'DIAGNOSTIC_FAILED' })); process.exitCode = 1;
+    console.error(JSON.stringify(error instanceof DiscoveryError ? { error: error.code, message: error.message } : { error: 'DIAGNOSTIC_FAILED' })); process.exitCode = 1;
   }
 }
