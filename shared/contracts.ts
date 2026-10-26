@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CulturalItem } from './catalog.js';
 
 export const journeyInputSchema = z.object({
+  mode: z.enum(['demo', 'qloo']).optional(),
   favouriteIds: z.array(z.string().max(60)).min(1).max(5).refine(ids => new Set(ids).size === ids.length),
   adventure: z.enum(['gentle', 'curious', 'wild']),
   revision: z.number().int().min(0).max(100).default(0),
@@ -15,8 +16,9 @@ export interface JourneyStop extends CulturalItem {
   invitation: string;
 }
 export interface Journey {
-  source: 'demo';
-  status: 'ok' | 'empty';
+  source: 'demo' | 'qloo';
+  status: 'ok' | 'empty' | 'needs_input' | 'partial' | 'degraded';
+  notices?: string[];
   title: string;
   summary: string;
   stops: JourneyStop[];

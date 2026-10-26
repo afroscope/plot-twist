@@ -1,82 +1,70 @@
 # PLOT TWIST
 
-**Escape your algorithm without losing your taste.** A private application scaffold for a proposed Qloo hackathon entry: start with favourites, choose an adventure level, explore a short journey across music, film and books, then revise it with feedback.
+**Escape your algorithm without losing your taste.** Search for favourite artists, films and books, choose an adventure level, and revise a three-category discovery journey with feedback.
 
-## Current status
+## Current state — 26 October 2026
 
-This is a working **demo interface**, not a live AI recommendation engine. The app uses a small, hand-written catalogue and deterministic editorial matching. Every journey is labelled as demo data. No Qloo credential, harness, model provider or live Qloo request has been configured or verified. Names and connections use local IDs, not Qloo entity IDs. Artwork is original abstract CSS, not official cover art.
+The Qloo backend and live-mode interface are implemented. **Live Qloo access and the end-to-end browser experience are not yet verified.** No event credential was found in the original project or current process. The development session permits builds but blocks outbound network calls and listening sockets, so the three HTTP integration tests and browser walkthrough cannot run there. Provider tests use explicit contract fixtures, not live recordings.
 
-The repository is intended to remain private. No hosting service, paid service, public deployment or hackathon submission is configured. An open-source licence has not been selected (`UNLICENSED` in package metadata).
+The private repository is `afroscope/plot-twist`. The working copy for this update is:
 
-## Run locally
+`/Users/afroscope/.codex/.chatgpt-projects/g-p-67d62ec56378819194cbdd85f7d8e1e3/plot-twist`
 
-Use Node.js **22.19 or later** (Node 24 recommended; `.nvmrc` selects 24) and npm. From this folder:
+The original 22 October copy in Documents/Codex remains unchanged. No public deployment or hackathon submission has been made.
+
+## Run and configure
+
+Use Node 22.19+ (24 recommended):
 
 ```sh
 npm ci
+npm run setup:qloo
 npm run dev
 ```
 
-Open **http://127.0.0.1:4173**. The development command starts Express and Vite together. Nothing is required in `.env`; the demo needs no credentials. The server binds only to loopback. If the port is busy, use `PORT=4174 npm run dev`.
+The setup command accepts a key in a hidden terminal prompt and writes it to `.env`, which Git ignores. Do not paste keys into chat, source, screenshots or browser forms. Existing environment variables take precedence over `.env`. The event origin is fixed to `https://hackathon.api.qloo.com`; an event key will not be sent to any other host. No model key is required for this discovery loop.
 
-1. Choose 1–5 favourites, or use **Try a sample taste**.
-2. Select an adventure level, then **Find my plot twist**.
-3. Choose **Keep this** or **Try another** on a stop.
-4. Use **Revise my journey**. Loved stops are kept and skipped stops are excluded. If a category is exhausted, reset the demo feedback.
-5. Use **Edit my taste** to change favourites or adventure level.
+Open **http://127.0.0.1:4173**. Search for a favourite, check the returned name/category/details, and select the correct result. Choose 1–5 favourites and an adventure level, then **Find my plot twist**. **Keep this** retains a result and includes it in subsequent Qloo signals. **Try another** excludes that result. **Revise my journey** requests an updated selection. Feedback is in page memory (maximum 30 choices); reloading resets it. Catalogue references expire after 30 minutes and require reselection.
 
-Search covers only the visible demo catalogue. Choices and feedback live in page memory and reset on reload. The app has no accounts, analytics, database, history, streaming or external content links.
+**Try the demo** explicitly switches to the original hand-written catalogue. Missing credentials, failed queries or empty Qloo results never fall back to demo data.
 
-## Verify and build
+## What adventure level means
+
+Qloo supplies an affinity-ranked pool of up to 12 entities per category. PLOT TWIST selects from a three-item window starting at rank 1 (gentle), 4 (curious) or 8 (wild), clamped for shorter lists. Revisions rotate within the available window. This is a transparent product heuristic, **not a validated novelty measure**. Live coverage and perceived recommendation quality still need testing. Kept results remain fixed; rejected items are excluded both upstream and locally.
+
+Connection text states which seeds were supplied to Qloo. It does not invent a psychological explanation or present an affinity as a probability about an individual. Descriptions come from returned catalogue metadata; abstract artwork is original CSS. This implementation uses Qloo directly over HTTPS, rather than the optional CLI/MCP harness. It is not yet an LLM-driven autonomous agent.
+
+## API and failure behaviour
+
+- `GET /api/health`: reports configuration only; `configured-unverified` is not a successful authentication check.
+- `GET /api/search?q=...&medium=Music|Film|Book`: server-only Qloo lookup; 2–120 characters, at most 12 matches. Omit medium for all three categories.
+- `POST /api/journeys`: `mode` (`qloo` or `demo`, default demo), 1–5 distinct `favouriteIds`, `adventure` (`gentle`, `curious`, `wild`), `revision` (0–100), optional `feedback` mapping IDs to `love`/`skip`.
+- Qloo statuses: `ok`, `partial` (missing category), `degraded` (failed category with usable results), `empty`, `needs_input` (expired/unrecognised IDs). Total failures use explicit HTTP errors, including authentication, quota and malformed upstream responses.
+- Credentials remain server-side. Requests have an 8-second deadline, no automatic retries, no redirect following, a conservative local budget of 30 uncached calls/minute, and a bounded five-minute memory cache. This local ceiling does not claim to match the event quota.
+- The server binds only to loopback. Authentication and production abuse controls must be designed before external hosting.
+
+## Verify
 
 ```sh
 npm run lint
 npm run typecheck
+npm run test:qloo
 npm test
 npm run build
 npm start
 ```
 
-`npm run check` runs lint, tests and build together. Tests cover the API contract, invalid and oversized requests, feedback behaviour, empty results, explicit Qloo unavailability and sanitised errors. `npm start` serves the built browser app and API on loopback; build first. Stop the dev server before starting the built app on the same port. The generated `dist/` and `dist-server/` folders are ignored.
+`npm run check` runs lint, all tests and the production build. GitHub Actions runs this on push. The API tests need permission to bind an ephemeral loopback port. Qloo provider tests require neither a live credential nor a socket.
 
-## Structure
+**Pending live acceptance check:** configure the event key, search and confirm at least two different taste profiles, generate each journey, compare adventure levels, keep one result and reject another, verify the revision, check unavailable/missing matches, and inspect the interface on desktop and mobile. Never call fixture tests live verification.
 
-```text
-src/                    React interface and responsive CSS
-shared/catalog.ts       Demo favourites and adventure levels
-shared/contracts.ts     Shared request schema and response types
-server/app.ts           Validated HTTP API, error boundary
-server/index.ts         Local development / built-app entry point
-server/providers/       Server-only demo provider and disabled Qloo adapter
-tests/                  Behaviour and API tests (Node test runner)
-public/                 Local favicon
-```
+## Sources reviewed
 
-React and TypeScript keep the small interactive flow straightforward; Vite builds the browser assets. Express provides a persistent Node process without coupling the application to a serverless host. Browser code calls only the local `/api/journeys` boundary.
+- [Qloo hackathon kit](https://github.com/qloo/qloo-hackathon-kit)
+- [Entity search](https://github.com/qloo/docs-public/blob/main/reference/get-search.md)
+- [Recommendation insights and example response](https://github.com/qloo/docs-public/blob/main/reference/basic-insights-use-case.md)
+- [Insights parameters](https://github.com/qloo/docs-public/blob/main/reference/insights-api-deep-dive.md)
+- [Event access and limits](https://github.com/qloo/qloo-hackathon-kit/blob/main/docs/API_ACCESS.md)
+- [Safe use](https://github.com/qloo/qloo-hackathon-kit/blob/main/docs/SAFE_USE.md)
 
-## API boundary
-
-- `GET /api/health`: explicit demo mode and Qloo-not-configured status.
-- `POST /api/journeys`: accepts `favouriteIds` (1–5 known demo IDs), `adventure` (`gentle`, `curious`, `wild`), optional `revision` (0–100), and optional `feedback` (demo ID to `love` or `skip`). Returns `source: "demo"`, `status`, title, summary and three stops, or an explicit empty result.
-- Bad input returns 400; oversized JSON returns 413; unknown API paths return 404. An unavailable provider returns 503; unexpected errors return a generic 500. No request-body or upstream-error logging.
-
-The `RecommendationProvider` interface is a server-only seam. The Qloo stub always rejects and is not wired to the running app. A live implementation must expand the response types and UI for live provenance and Qloo's full status model; do not relabel demo results or silently fall back to fixtures.
-
-## Next: a real Qloo integration
-
-Reviewed against the [official Qloo hackathon kit](https://github.com/qloo/qloo-hackathon-kit) on 22 October 2026. The [MCP starter](https://github.com/qloo/qloo-hackathon-kit/blob/main/starter/mcp-client/README.md) requires a Node **22.19+ VM or container** capable of spawning the local `qloo mcp` process. Browser execution and unsupported serverless MCP hosting are unsuitable. The scaffold leaves hosting unchosen.
-
-Before enabling live discovery:
-
-1. Obtain approved event access and verify its limits, then configure the credential **only on the backend** outside version control. `.env.example` lists names with empty values; the app does not load or use those credentials today. Never use a `VITE_` prefix for secrets.
-2. Verify the supported harness version and readiness. Resolve and confirm Qloo entity/tag IDs for chosen favourites before depending on them.
-3. Implement the server provider with bounded timeouts, quotas and retry behaviour. Handle `ok`, `empty`, `needs_input`, `partial`, `degraded` and `error` distinctly. Never infer identity or sensitive traits from taste.
-4. Distinguish Qloo evidence from the product's editorial interpretation. Add genuine source information and avoid individual match probabilities.
-5. Choose an approved model/agent design, if needed, and add integration tests before claiming live AI behaviour.
-6. Review authentication, abuse/rate controls, origin policy, monitoring and deployment security before any network exposure. This local scaffold has no production access controls.
-
-See [API access and limits](https://github.com/qloo/qloo-hackathon-kit/blob/main/docs/API_ACCESS.md) and [safe use](https://github.com/qloo/qloo-hackathon-kit/blob/main/docs/SAFE_USE.md). No live requests have been made in this project.
-
-## Secrets and publishing
-
-`.gitignore` excludes local environment files (except the blank example), credentials, dependencies, builds and logs. Do not put keys in source, browser bundles, prompts, screenshots or logs. Do not commit a filled `.env.example`. Do not make this repository public or deploy it without separate approval. Licence selection remains pending.
+Event starter email dated 22 October specifies the hackathon origin and permits custom tooling. Actual event quota and expiry must be checked with the issued credential. Repository remains private and unlicensed; publishing and submission are separate steps.

@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/*.test.ts",
-    "check": "npm run lint && npm test && npm run build"
+    "check": "npm run lint && npm test && npm run build",
+    "setup:qloo": "node scripts/setup-qloo.mjs",
+    "test:qloo": "node --import tsx --test tests/qloo.test.ts"
   },
   "dependencies": {
     "express": "^5.1.0",

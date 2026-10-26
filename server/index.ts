@@ -1,7 +1,10 @@
+import { existsSync } from 'node:fs';
+import { loadEnvFile } from 'node:process';
 import express from 'express';
 import { resolve } from 'node:path';
 import { createApp } from './app.js';
 
+if (existsSync('.env')) loadEnvFile('.env');
 const app = createApp();
 const port = Number(process.env.PORT || 4173);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid port number.');
@@ -15,7 +18,7 @@ if (process.argv.includes('--production')) {
   app.use(vite.middlewares);
 }
 const server = app.listen(port, '127.0.0.1', () => {
-  console.info(`PLOT TWIST demo: http://127.0.0.1:${port} (Qloo is not configured)`);
+  console.info(`PLOT TWIST: http://127.0.0.1:${port} (Qloo ${process.env.QLOO_API_KEY ? 'configured; live verification pending' : 'key required'})`);
 });
 server.on('error', () => { console.error('Could not start the local server. Check whether PORT is in use.'); process.exit(1); });
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

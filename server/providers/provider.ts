@@ -1,7 +1,6 @@
 import type { Journey, JourneyInput } from '../../shared/contracts.js';
-
-// This boundary runs only in the Node backend. Never import providers into src/.
-export interface RecommendationProvider {
-  createJourney(input: JourneyInput): Promise<Journey>;
-}
+export interface RecommendationProvider { createJourney(input: JourneyInput): Promise<Journey> }
 export class ProviderUnavailableError extends Error {}
+export class DiscoveryError extends Error {
+  constructor(public code: string, public status: number, message: string) { super(message); }
+}
