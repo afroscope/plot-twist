@@ -16,6 +16,9 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run lint && npm test && npm run build",
     "setup:qloo": "node scripts/setup-qloo.mjs",
+    "setup:agent": "node scripts/setup-agent.mjs",
+    "diagnose:agent": "node --import tsx scripts/diagnose-agent.ts",
+    "test:agent": "node --import tsx --test tests/agent.test.ts",
     "diagnose:qloo": "node --import tsx scripts/diagnose-qloo.ts",
     "test:qloo": "node --import tsx --test tests/qloo.test.ts"
   },

@@ -53,7 +53,7 @@ test('exhausting a medium returns an explicit empty state', async () => {
 });
 test('API validates input, keeps errors generic, and labels demo health', async () => {
   await withServer(async url => {
-    assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok', mode: 'demo', qloo: 'not-configured' });
+    assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok', mode: 'demo', qloo: 'not-configured', agent: 'not-configured' });
     const response = await post(url, input);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -74,6 +74,13 @@ test('unconfigured Qloo fails explicitly without returning demo data', async () 
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error.code, 'PROVIDER_UNAVAILABLE');
   }, qlooProvider);
+});
+test('agent mode accepts live IDs and reports missing configuration without demo fallback', async () => {
+  await withServer(async url => {
+    const response = await post(url, { ...input, mode: 'agent', favouriteIds: ['00000000-0000-4000-8000-000000000001'] });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, 'AGENT_NOT_CONFIGURED');
+  });
 });
 test('unexpected provider errors never expose private details', async () => {
   await withServer(async url => {

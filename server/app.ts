@@ -6,8 +6,11 @@ import { favourites } from '../shared/catalog.js';
 import { demoItems, demoProvider } from './providers/demo.js';
 import { DiscoveryError, ProviderUnavailableError, type RecommendationProvider } from './providers/provider.js';
 import { publicSecurity } from './public-security.js';
+import { createDiscoveryAgent, type DiscoveryAgent } from './agent/discovery.js';
+import { createOpenAIModel } from './agent/model.js';
 
-export function createApp(provider: RecommendationProvider = demoProvider, liveProvider: QlooProvider = createQlooProvider({ apiKey: process.env.QLOO_API_KEY }), publicDeployment = false) {
+export function createApp(provider: RecommendationProvider = demoProvider, liveProvider: QlooProvider = createQlooProvider({ apiKey: process.env.QLOO_API_KEY }), publicDeployment = false,
+  agent: DiscoveryAgent = createDiscoveryAgent(liveProvider, createOpenAIModel({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }))) {
   const app = express();
   app.disable('x-powered-by');
   if (publicDeployment) app.use(publicSecurity());
@@ -18,7 +21,8 @@ export function createApp(provider: RecommendationProvider = demoProvider, liveP
   });
   app.use('/api', express.json({ limit: '8kb' }));
   app.get('/api/health', (_request, response) => {
-    response.json({ status: 'ok', mode: liveProvider.configured ? 'qloo' : 'demo', qloo: liveProvider.configured ? 'configured-unverified' : 'not-configured' });
+    response.json({ status: 'ok', mode: agent.configured ? 'agent' : liveProvider.configured ? 'qloo' : 'demo',
+      qloo: liveProvider.configured ? 'configured-unverified' : 'not-configured', agent: agent.configured ? 'configured-unverified' : 'not-configured' });
   });
   app.get('/api/search', async (request, response, next) => {
     const input = z.object({ q: z.string().trim().min(2).max(120), medium: z.enum(['Music', 'Film', 'Book']).optional() }).strict().safeParse(request.query);
@@ -28,13 +32,20 @@ export function createApp(provider: RecommendationProvider = demoProvider, liveP
   });
   app.post('/api/journeys', async (request, response, next) => {
     const input = journeyInputSchema.safeParse(request.body);
-    if (!input.success || (input.data.mode !== 'qloo' && (input.data.favouriteIds.some(id => !favourites.some(item => item.id === id))
+    if (!input.success || ((input.data.mode === 'demo' || !input.data.mode) && (input.data.favouriteIds.some(id => !favourites.some(item => item.id === id))
       || Object.keys(input.data.feedback).some(id => !demoItems.some(item => item.id === id))))) {
       response.status(400).json({ error: { code: 'INVALID_INPUT', message: 'Choose 1–5 distinct favourites, a valid adventure level and at most 30 feedback choices.' } });
       return;
     }
-    try { response.json(await (input.data.mode === 'qloo' ? liveProvider : provider).createJourney(input.data)); }
-    catch (error) { next(error); }
+    const controller = new AbortController();
+    const cancel = () => { if (!response.writableEnded) controller.abort(); };
+    response.on('close', cancel);
+    try {
+      const selected = input.data.mode === 'agent' ? agent : input.data.mode === 'qloo' ? liveProvider : provider;
+      const journey = await selected.createJourney(input.data, controller.signal);
+      if (!controller.signal.aborted) response.json(journey);
+    } catch (error) { if (!controller.signal.aborted) next(error); }
+    finally { response.off('close', cancel); }
   });
   app.use('/api', (_request, response) => {
     response.status(404).json({ error: { code: 'NOT_FOUND', message: 'This API route does not exist.' } });

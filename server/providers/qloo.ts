@@ -27,9 +27,13 @@ export interface QlooDiagnostic {
   issues?: { record: number; path: string; code: string }[];
 }
 export interface QlooOptions { apiKey?: string; fetch?: typeof fetch; now?: () => number; timeoutMs?: number; onDiagnostic?: (event: QlooDiagnostic) => void }
+export interface QlooCandidate extends CulturalItem { description: string }
+export interface QlooQuery { medium: Medium; signalIds: string[]; excludeIds: string[]; offset: number }
 export interface QlooProvider extends RecommendationProvider {
   configured: boolean;
   search(query: string, medium?: Medium): Promise<CulturalItem[]>;
+  lookup(id: string): QlooCandidate | undefined;
+  recommend(query: QlooQuery, signal?: AbortSignal): Promise<QlooCandidate[]>;
 }
 // Direct REST adapter, reviewed against Qloo's public API documentation.
 // No credentials, raw upstream bodies, or personal identifiers leave this boundary.
@@ -59,7 +63,9 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
       tags: (item.tags ?? []).slice(0, 8).map(tag => tag.name),
       palette: { Music: 'clay', Film: 'wine', Book: 'blue' }[medium] };
   }
-  async function get(path: string, params: Record<string, string>): Promise<Entity[]> {
+  const candidate = (item: Entity): QlooCandidate => ({ ...cultural(item), description: item.properties?.description?.slice(0, 700) || 'Explore this discovery from Qloo’s cultural catalogue.' });
+  async function get(path: string, params: Record<string, string>, parentSignal?: AbortSignal): Promise<Entity[]> {
+    parentSignal?.throwIfAborted();
     if (!apiKey) throw new ProviderUnavailableError('Qloo key is not configured.');
     const url = new URL(path, 'https://hackathon.api.qloo.com');
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -69,7 +75,8 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
     if (calls.length >= 30) throw new DiscoveryError('RATE_LIMITED', 429, 'Discovery is taking a short break. Try again in a minute.');
     calls.push(now());
     const started = Date.now();
-    const signal = AbortSignal.timeout(options.timeoutMs ?? 8000);
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? 8000);
+    const signal = parentSignal ? AbortSignal.any([parentSignal, timeout]) : timeout;
     const category = path === '/search' ? 'search' : (Object.keys(types) as Medium[]).find(m => types[m] === params['filter.type']) ?? 'unknown';
     const report = (event: Omit<QlooDiagnostic, 'category' | 'elapsedMs'>) => {
       options.onDiagnostic?.({ ...event, category, elapsedMs: Date.now() - started });
@@ -116,6 +123,18 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
   }
   return {
     configured: Boolean(apiKey),
+    lookup(id) { const item = known(id); return item ? candidate(item) : undefined; },
+    async recommend(query, signal) {
+      if (!types[query.medium] || ![0, 12, 24].includes(query.offset) || query.signalIds.length < 1 || query.signalIds.length > 8
+        || query.signalIds.some(id => !uuid.safeParse(id).success || !known(id))
+        || query.excludeIds.length > 65 || query.excludeIds.some(id => !uuid.safeParse(id).success)) {
+        throw new DiscoveryError('INVALID_TOOL_INPUT', 400, 'Use confirmed catalogue references and a supported search window.');
+      }
+      const excluded = new Set(query.excludeIds);
+      const items = await get('/v2/insights', { 'filter.type': types[query.medium], 'signal.interests.entities': query.signalIds.join(','),
+        'filter.exclude.entities': query.excludeIds.join(','), sort_by: 'affinity', take: '12', offset: String(query.offset) }, signal);
+      return items.filter(item => mediumOf(item) === query.medium && !excluded.has(item.entity_id)).slice(0, 12).map(candidate);
+    },
     async search(query, medium) {
       const params = { query, types: medium ? types[medium] : Object.values(types).join(','), take: '12' };
       const items = await get('/search', params);
@@ -123,16 +142,16 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
     },
     async createJourney(input: JourneyInput): Promise<Journey> {
       if (!apiKey) throw new ProviderUnavailableError('Qloo key is not configured.');
-      const ids = [...input.favouriteIds, ...Object.keys(input.feedback)];
+      const ids = [...input.favouriteIds, ...(input.dislikedIds ?? []), ...(input.knownIds ?? []), ...Object.keys(input.feedback)];
       if (ids.some(id => !uuid.safeParse(id).success || !known(id))) {
         return { source: 'qloo', status: 'needs_input', title: 'Let’s reconnect your favourites.',
           summary: 'Search for and select your favourites again. Their catalogue references have expired or are unrecognised.', stops: [] };
       }
       const seeds = input.favouriteIds.map(id => known(id)!);
       const loved = Object.entries(input.feedback).filter(([,value]) => value === 'love').map(([id]) => known(id)!);
-      const skipped = Object.entries(input.feedback).filter(([,value]) => value === 'skip').map(([id]) => id);
+      const skipped = Object.entries(input.feedback).filter(([,value]) => value !== 'love').map(([id]) => id);
       const signals = [...new Set([...input.favouriteIds, ...loved.map(item => item.entity_id)])];
-      const excluded = new Set([...signals, ...skipped]);
+      const excluded = new Set([...signals, ...skipped, ...(input.dislikedIds ?? []), ...(input.knownIds ?? [])]);
       const results = await Promise.allSettled((Object.keys(types) as Medium[]).map(async medium => {
         const retained = loved.find(item => mediumOf(item) === medium);
         let item = retained;
