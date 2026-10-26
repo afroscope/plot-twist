@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createQlooProvider } from '../server/providers/qloo.js';
+import { createQlooProvider, type QlooDiagnostic } from '../server/providers/qloo.js';
 import { DiscoveryError, ProviderUnavailableError } from '../server/providers/provider.js';
 import type { JourneyInput } from '../shared/contracts.js';
 
@@ -123,4 +123,73 @@ test('local request budget caps unique searches and recovers after a minute', as
   for (let n = 0; n < 30; n++) await provider.search(`query-${n}`);
   await assert.rejects(provider.search('query-31'), error => error instanceof DiscoveryError && error.code === 'RATE_LIMITED');
   assert.equal(calls, 30); now = 61_000; await provider.search('query-31'); assert.equal(calls, 31);
+});
+
+test('diagnostics identify invalid music fields without exposing credentials or payload values', async () => {
+  const events: QlooDiagnostic[] = [];
+  const provider = createQlooProvider({ apiKey: 'private-secret', onDiagnostic: event => events.push(event), fetch: async target => {
+    const url = new URL(String(target));
+    if (url.pathname === '/search') return Response.json({ results: [entity(1)] });
+    const type = url.searchParams.get('filter.type')!;
+    const row = entity(10, type);
+    return Response.json({ results: { entities: [type === 'urn:entity:artist' ? { ...row, disambiguation: { private: 'payload-secret' } } : row] } });
+  } });
+  await provider.search('Fela Kuti');
+  const journey = await provider.createJourney(input);
+  assert.equal(journey.status, 'degraded');
+  const validation = events.find(event => event.stage === 'validation');
+  assert.equal(validation?.category, 'Music');
+  assert.deepEqual(validation?.issues, [{ record: 0, path: 'disambiguation', code: 'invalid_type' }]);
+  const text = JSON.stringify(events);
+  assert(!text.includes('private-secret')); assert(!text.includes('payload-secret'));
+  assert(!text.includes('https:')); assert(!text.includes('Title'));
+});
+
+test('diagnostics distinguish upstream HTTP errors, invalid JSON, network errors and timeouts', async () => {
+  for (const kind of ['http', 'validation', 'network', 'timeout']) {
+    const events: QlooDiagnostic[] = [];
+    const provider = createQlooProvider({ apiKey: 'test', timeoutMs: 5, onDiagnostic: event => events.push(event), fetch: async (_target, options) => {
+      if (kind === 'http') return new Response('', { status: 503 });
+      if (kind === 'validation') return new Response('not-json');
+      if (kind === 'timeout') await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 100);
+        options?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('private-exception')); });
+      });
+      throw new Error('private-exception');
+    } });
+    await assert.rejects(provider.search('Fela Kuti'), DiscoveryError);
+    assert.equal(events.at(-1)?.stage, kind);
+    if (kind === 'http') assert.equal(events.at(-1)?.status, 503);
+    assert(!JSON.stringify(events).includes('private-exception'));
+  }
+});
+
+test('an invalid name at music record 1 tags 87 does not discard music recommendations', async () => {
+  const events: QlooDiagnostic[] = [];
+  const provider = createQlooProvider({ apiKey: 'test', onDiagnostic: event => events.push(event), fetch: async target => {
+    const url = new URL(String(target));
+    if (url.pathname === '/search') return Response.json({ results: [entity(1)] });
+    const type = url.searchParams.get('filter.type')!;
+    const rows = [entity(10, type), { ...entity(11, type), tags: [
+      ...Array.from({ length: 87 }, (_, i) => ({ name: `Genre ${i}` })), { name: null },
+    ] }];
+    return Response.json({ results: { entities: rows } });
+  } });
+  await provider.search('Fela Kuti');
+  const journey = await provider.createJourney({ ...input, revision: 1 });
+  assert.equal(journey.status, 'ok');
+  assert.deepEqual(journey.stops.map(stop => stop.medium), ['Music', 'Film', 'Book']);
+  assert.equal(journey.stops[0].id, id(11));
+  assert.deepEqual(journey.stops[0].tags, Array.from({ length: 8 }, (_, i) => `Genre ${i}`));
+  assert(!events.some(event => event.stage === 'validation'));
+});
+
+test('optional tags drop invalid entries without coercion while artist identity remains strict', async () => {
+  const tags = [{ name: 'Afrobeat' }, { name: null }, {}, null, 42, { name: 7 }, { name: ' ' }, { name: 'Jazz' }];
+  const provider = createQlooProvider({ apiKey: 'test', fetch: async () => Response.json({ results: [{ ...entity(1), tags }] }) });
+  assert.deepEqual((await provider.search('Fela Kuti'))[0].tags, ['Afrobeat', 'Jazz']);
+  for (const invalid of [{ entity_id: 'invalid' }, { name: null }, { name: '' }]) {
+    const strict = createQlooProvider({ apiKey: 'test', fetch: async () => Response.json({ results: [{ ...entity(1), ...invalid, tags }] }) });
+    await assert.rejects(strict.search('Fela Kuti'), error => error instanceof DiscoveryError && error.code === 'QLOO_RESPONSE');
+  }
 });

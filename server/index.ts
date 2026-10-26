@@ -3,12 +3,13 @@ import { loadEnvFile } from 'node:process';
 import express from 'express';
 import { resolve } from 'node:path';
 import { createApp } from './app.js';
+import { runtimeConfig } from './config.js';
 
 if (existsSync('.env')) loadEnvFile('.env');
-const app = createApp();
-const port = Number(process.env.PORT || 4173);
-if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid port number.');
-if (process.argv.includes('--production')) {
+const production = process.argv.includes('--production');
+const { port, host } = runtimeConfig(process.env, production);
+const app = createApp(undefined, undefined, production);
+if (production) {
   const directory = resolve('dist');
   app.use(express.static(directory, { dotfiles: 'deny' }));
   app.get('/{*path}', (_request, response) => { response.sendFile(resolve(directory, 'index.html')); });
@@ -17,8 +18,8 @@ if (process.argv.includes('--production')) {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
   app.use(vite.middlewares);
 }
-const server = app.listen(port, '127.0.0.1', () => {
-  console.info(`PLOT TWIST: http://127.0.0.1:${port} (Qloo ${process.env.QLOO_API_KEY ? 'configured; live verification pending' : 'key required'})`);
+const server = app.listen(port, host, () => {
+  console.info(`PLOT TWIST listening on ${host}:${port} (${production ? 'production' : 'development'}; Qloo ${process.env.QLOO_API_KEY ? 'configured' : 'key required'})`);
 });
-server.on('error', () => { console.error('Could not start the local server. Check whether PORT is in use.'); process.exit(1); });
+server.on('error', () => { console.error('Could not start the server. Check whether HOST and PORT are available.'); process.exit(1); });
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

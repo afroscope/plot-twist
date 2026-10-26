@@ -10,7 +10,8 @@ import type { JourneyInput } from '../shared/contracts.js';
 const input: JourneyInput = { favouriteIds: ['seed-sade', 'seed-wong', 'seed-octavia'], adventure: 'curious', revision: 0, feedback: {} };
 
 async function withServer(run: (url: string) => Promise<void>, provider?: RecommendationProvider) {
-  const server = createApp(provider).listen(0, '127.0.0.1');
+  // Fixtures never inherit a deployed server's real Qloo credential.
+  const server = createApp(provider, qlooProvider).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
   assert(address && typeof address !== 'string');

@@ -5,10 +5,12 @@ import { journeyInputSchema } from '../shared/contracts.js';
 import { favourites } from '../shared/catalog.js';
 import { demoItems, demoProvider } from './providers/demo.js';
 import { DiscoveryError, ProviderUnavailableError, type RecommendationProvider } from './providers/provider.js';
+import { publicSecurity } from './public-security.js';
 
-export function createApp(provider: RecommendationProvider = demoProvider, liveProvider: QlooProvider = createQlooProvider({ apiKey: process.env.QLOO_API_KEY })) {
+export function createApp(provider: RecommendationProvider = demoProvider, liveProvider: QlooProvider = createQlooProvider({ apiKey: process.env.QLOO_API_KEY }), publicDeployment = false) {
   const app = express();
   app.disable('x-powered-by');
+  if (publicDeployment) app.use(publicSecurity());
   app.use('/api', (_request, response, next) => {
     response.set('Cache-Control', 'no-store');
     response.set('X-Content-Type-Options', 'nosniff');
@@ -16,7 +18,7 @@ export function createApp(provider: RecommendationProvider = demoProvider, liveP
   });
   app.use('/api', express.json({ limit: '8kb' }));
   app.get('/api/health', (_request, response) => {
-    response.json({ status: 'ok', mode: 'demo', qloo: liveProvider.configured ? 'configured-unverified' : 'not-configured' });
+    response.json({ status: 'ok', mode: liveProvider.configured ? 'qloo' : 'demo', qloo: liveProvider.configured ? 'configured-unverified' : 'not-configured' });
   });
   app.get('/api/search', async (request, response, next) => {
     const input = z.object({ q: z.string().trim().min(2).max(120), medium: z.enum(['Music', 'Film', 'Book']).optional() }).strict().safeParse(request.query);

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
   },
@@ -16,6 +16,7 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run lint && npm test && npm run build",
     "setup:qloo": "node scripts/setup-qloo.mjs",
+    "diagnose:qloo": "node --import tsx scripts/diagnose-qloo.ts",
     "test:qloo": "node --import tsx --test tests/qloo.test.ts"
   },
   "dependencies": {

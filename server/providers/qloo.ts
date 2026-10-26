@@ -5,15 +5,28 @@ import { DiscoveryError, ProviderUnavailableError, type RecommendationProvider }
 
 const types: Record<Medium, string> = { Music: 'urn:entity:artist', Film: 'urn:entity:movie', Book: 'urn:entity:book' };
 const uuid = z.string().uuid();
+const tagSchema = z.object({ name: z.string().trim().min(1) });
 const entitySchema = z.object({
   entity_id: uuid, name: z.string().min(1).max(500),
   types: z.array(z.string()).optional(), subtype: z.string().optional(),
   disambiguation: z.string().optional(), popularity: z.number().optional(),
   properties: z.object({ description: z.string().optional() }).passthrough().optional(),
-  tags: z.array(z.object({ name: z.string() }).passthrough()).optional(),
+  // Tags are optional display metadata. One invalid tag must not discard an
+  // otherwise valid artist or every recommendation in its category.
+  tags: z.array(z.unknown()).transform(tags => tags.flatMap(tag => {
+    const parsed = tagSchema.safeParse(tag);
+    return parsed.success ? [parsed.data] : [];
+  })).optional(),
 }).passthrough();
 type Entity = z.infer<typeof entitySchema>;
-export interface QlooOptions { apiKey?: string; fetch?: typeof fetch; now?: () => number; timeoutMs?: number }
+export interface QlooDiagnostic {
+  stage: 'http' | 'validation' | 'timeout' | 'network';
+  category: string;
+  status?: number;
+  elapsedMs: number;
+  issues?: { record: number; path: string; code: string }[];
+}
+export interface QlooOptions { apiKey?: string; fetch?: typeof fetch; now?: () => number; timeoutMs?: number; onDiagnostic?: (event: QlooDiagnostic) => void }
 export interface QlooProvider extends RecommendationProvider {
   configured: boolean;
   search(query: string, medium?: Medium): Promise<CulturalItem[]>;
@@ -55,20 +68,41 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
     calls = calls.filter(time => now() - time < 60_000);
     if (calls.length >= 30) throw new DiscoveryError('RATE_LIMITED', 429, 'Discovery is taking a short break. Try again in a minute.');
     calls.push(now());
+    const started = Date.now();
+    const signal = AbortSignal.timeout(options.timeoutMs ?? 8000);
+    const category = path === '/search' ? 'search' : (Object.keys(types) as Medium[]).find(m => types[m] === params['filter.type']) ?? 'unknown';
+    const report = (event: Omit<QlooDiagnostic, 'category' | 'elapsedMs'>) => {
+      options.onDiagnostic?.({ ...event, category, elapsedMs: Date.now() - started });
+    };
     try {
       const response = await request(url, { headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
-        redirect: 'error', signal: AbortSignal.timeout(options.timeoutMs ?? 8000) });
+        redirect: 'error', signal });
+      report({ stage: 'http', status: response.status });
       if (response.status === 401 || response.status === 403) throw new DiscoveryError('QLOO_AUTH', 503, 'Qloo access needs attention. Check the server’s hackathon API key.');
       if (response.status === 429) throw new DiscoveryError('RATE_LIMITED', 429, 'Qloo’s request limit has been reached. Please try again later.');
       if (response.status === 404 && path === '/search') return [];
       if (!response.ok) throw new DiscoveryError('QLOO_UNAVAILABLE', 503, 'Qloo could not complete this request. Please try again later.');
-      const body: unknown = await response.json();
+      let body: unknown;
+      try { body = await response.json(); }
+      catch (error) {
+        if (signal.aborted) throw error;
+        report({ stage: 'validation' });
+        throw new DiscoveryError('QLOO_RESPONSE', 502, 'Qloo returned an unexpected response. Please try again later.');
+      }
       const envelope = z.object({ success: z.boolean().optional(), results: z.union([z.array(z.unknown()), z.object({ entities: z.array(z.unknown()) })]) }).safeParse(body);
-      if (!envelope.success || envelope.data.success === false) throw new DiscoveryError('QLOO_RESPONSE', 502, 'Qloo returned an unexpected response. Please try again later.');
+      if (!envelope.success || envelope.data.success === false) {
+        report({ stage: 'validation' });
+        throw new DiscoveryError('QLOO_RESPONSE', 502, 'Qloo returned an unexpected response. Please try again later.');
+      }
       const raw = Array.isArray(envelope.data.results) ? envelope.data.results : envelope.data.results.entities;
       const parsed = raw.map(item => entitySchema.safeParse(item));
       // A malformed record must not be disguised as a successful empty result.
-      if (parsed.some(item => !item.success)) throw new DiscoveryError('QLOO_RESPONSE', 502, 'Qloo returned incomplete entity information. Please try again later.');
+      if (parsed.some(item => !item.success)) {
+        report({ stage: 'validation', issues: parsed.flatMap((item, record) => item.success ? [] : item.error.issues.map(issue => ({
+          record, path: issue.path.join('.'), code: issue.code,
+        }))) });
+        throw new DiscoveryError('QLOO_RESPONSE', 502, 'Qloo returned incomplete entity information. Please try again later.');
+      }
       const items = parsed.flatMap(item => item.success && mediumOf(item.data) ? [item.data] : []);
       remember(items);
       cache.set(url.href, { entities: items, time: now() });
@@ -76,6 +110,7 @@ export function createQlooProvider(options: QlooOptions = {}): QlooProvider {
       return items;
     } catch (error) {
       if (error instanceof DiscoveryError || error instanceof ProviderUnavailableError) throw error;
+      report({ stage: signal.aborted ? 'timeout' : 'network' });
       throw new DiscoveryError('QLOO_UNAVAILABLE', 503, 'We couldn’t reach Qloo. Please try again later.');
     }
   }
