@@ -6,6 +6,15 @@
 @media(max-width:420px){.shell{padding:0 18px}.hero h1{font-size:47px}.hero-copy{font-size:13px}.favourites-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:23px 16px}.filters button{padding:8px 10px}.search{max-width:137px}.catalogue-tools{gap:8px}.search input{font-size:10px}.search kbd{display:none}.favourite strong{font-size:13px}.creator{font-size:10px}.catalogue-foot{flex-direction:column;align-items:flex-start}.journey-heading h1{font-size:39px}.journey-edition{font-size:9px}}
 @media(prefers-reduced-motion:no-preference){button,.artwork{transition:background .15s,filter .15s,outline-color .15s}.journey-card{animation:arrive .35s ease both}.journey-card:nth-child(2){animation-delay:.08s}.journey-card:nth-child(3){animation-delay:.16s}@keyframes arrive{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}}
 
+.catalogue-tools > .text-button { white-space:nowrap; }
+@media(max-width:760px) {
+  .catalogue-tools { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:12px; }
+  .catalogue-tools > .filters { grid-column:1 / -1; flex-wrap:wrap; }
+  .catalogue-tools > .search { width:100%; max-width:none; min-width:0; }
+  .catalogue-tools .search input { font-size:16px; min-height:44px; }
+  .catalogue-tools > .text-button { min-height:44px; }
+}
+
 .mode-bar { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:20px 0; border-bottom:1px solid var(--line, #ddd); }
 .mode-bar > span { font-size:12px; color:#605e59; }
 .builder { border:0; margin:0; min-width:0; padding-left:0; padding-right:0; }
