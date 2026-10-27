@@ -2,6 +2,16 @@
 
 The app uses one Node service to serve the built React frontend and the private Qloo backend. GitHub Pages alone cannot run the backend. The same repository supports local editing and public deployment; publishing does not freeze future development.
 
+## Public beta — 27 October 2026
+
+- URL: https://plot-twist-y6mr.onrender.com/
+- Render service: `srv-dbfv9dmc6qcc73dqavdg`; Blueprint: `exs-dbfv952vcj2c73am2geg`.
+- Initial deployed commit: `2ba69e2cddb1ea173d5b2cd2761c88706aed60be`. All 49 tests and the production build passed on Render.
+- Free Node service in Frankfurt, connected to `afroscope/plot-twist` on `main`. Dashboard confirms **After CI Checks Pass** auto-deployment.
+- Qloo and OpenAI keys are stored as private Render environment variables. Public health returns agent mode; live Qloo search and a three-category agent journey succeeded without visitor sign-in.
+- The deployed JavaScript and CSS contain neither configured API key. `/.env` returns the public HTML fallback, not the environment file. CSP is present.
+- Public browser acceptance: Fela Kuti as a favourite, Femi Kuti as known and Seun Kuti as disliked produced Mulatu Astatke / Timbuktu / Brave New World (3 searches, 36 candidates). Keeping the book and requesting more adventurous music produced William Onyeabor / Hunger / the same Brave New World (4 searches, 46 unique candidates, 1 kept). The explanation recorded the exclusions, feedback and a follow-up music search using discovered Tony Allen. Both runs returned all three categories without a demo fallback. This verifies those runs, not general recommendation quality.
+
 ## Initial Render setup
 
 1. Sign in at https://dashboard.render.com using GitHub. Review Render's account permissions and terms. When installing repository access, select only `afroscope/plot-twist`.

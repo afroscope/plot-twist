@@ -4,7 +4,9 @@
 
 ## Current state — 27 October 2026
 
-The real Qloo + OpenAI agent has completed live three-category journeys, and the user has tested the selection flow successfully. The expandable **How this journey was built** view shows the submitted brief, recorded searches, unique candidate count, kept discoveries and the retrieval source of each pick. A live production-build check also verified recovery from an unavailable music query through a follow-up search. Automated tests cover tool orchestration, API routing, exclusions, feedback, explanation provenance and failures. Broader recommendation-quality comparison, public deployment and final Devpost submission remain pending.
+**Public beta: https://plot-twist-y6mr.onrender.com/** — hosted on Render's free plan. After inactivity, the first visit can take about a minute to wake the service.
+
+The real Qloo + OpenAI agent has completed live three-category journeys locally and on the public deployment. The expandable **How this journey was built** view shows the submitted brief, recorded searches, unique candidate count, kept discoveries and the retrieval source of each pick. A live production-build check also verified recovery from an unavailable music query through a follow-up search. Automated tests cover tool orchestration, API routing, exclusions, feedback, explanation provenance and failures. Broader recommendation-quality comparison and final Devpost submission remain pending.
 
 ## Run and configure
 
