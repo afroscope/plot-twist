@@ -19,6 +19,29 @@ export const journeyInputSchema = z.object({
   return new Set(all).size === all.length;
 }, 'A starting point can belong to only one taste group.');
 export type JourneyInput = z.infer<typeof journeyInputSchema>;
+export type JourneyReference = Pick<CulturalItem, 'id' | 'title' | 'medium'>;
+export interface JourneySearch {
+  number: number;
+  round: number;
+  medium: CulturalItem['medium'];
+  signals: (JourneyReference & { source: 'favourite' | 'kept' | 'discovery' })[];
+  offset: number;
+  status: 'ok' | 'unavailable';
+  candidateCount: number;
+}
+export interface JourneyExplanation {
+  brief: {
+    favourites: JourneyReference[];
+    disliked: JourneyReference[];
+    known: JourneyReference[];
+    adventure: JourneyInput['adventure'];
+    context: string;
+    feedback: { item: JourneyReference; action: Feedback }[];
+  };
+  searches: JourneySearch[];
+  uniqueCandidates: number;
+  selections: { item: JourneyReference; kept: boolean; searchNumber?: number }[];
+}
 export interface JourneyStop extends CulturalItem {
   description: string;
   connection: string;
@@ -28,6 +51,7 @@ export interface JourneyStop extends CulturalItem {
 export interface Journey {
   source: 'demo' | 'qloo';
   method?: 'agent' | 'ranked';
+  explanation?: JourneyExplanation;
   status: 'ok' | 'empty' | 'needs_input' | 'partial' | 'degraded';
   notices?: string[];
   title: string;

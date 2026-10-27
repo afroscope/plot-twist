@@ -2,9 +2,9 @@
 
 **Escape your algorithm without losing your taste.** Select favourite artists, films and books, choose an adventure level, and let a discovery agent build a three-category journey using Qloo. No chat prompt is required.
 
-## Current state — 26 October 2026
+## Current state — 27 October 2026
 
-The agent implementation is on `feature/discovery-agent`. Automated tests verify the bounded tool loop with scripted model responses, API routing, Qloo validation, exclusions, feedback and failures. **Real-model access and recommendation quality remain unverified until an OpenAI API key is configured and live acceptance checks pass.** The existing direct Qloo flow has been verified locally across all three categories. Public deployment and final Devpost submission remain pending.
+The real Qloo + OpenAI agent has completed live three-category journeys, and the user has tested the selection flow successfully. The expandable **How this journey was built** view shows the submitted brief, recorded searches, unique candidate count, kept discoveries and the retrieval source of each pick. A live production-build check also verified recovery from an unavailable music query through a follow-up search. Automated tests cover tool orchestration, API routing, exclusions, feedback, explanation provenance and failures. Broader recommendation-quality comparison, public deployment and final Devpost submission remain pending.
 
 ## Run and configure
 
@@ -60,7 +60,7 @@ npm run diagnose:agent
 
 `check` runs lint, all tests and the production build. Tests use fixtures and need no credentials; HTTP tests bind an ephemeral loopback port. Diagnostics use real saved credentials and may consume API allowance. They report only categories, status, counts and timing/error codes—not keys, headers, raw upstream bodies, context or internal reasoning. `diagnose:agent` verifies one live journey, not overall quality.
 
-See [agent architecture and evaluation](docs/AGENT.md), [deployment](docs/DEPLOYMENT.md), and [Devpost preparation](docs/DEVPOST.md). **How this journey was built** is deferred. Internal factual event callbacks support diagnostics; no chain-of-thought is recorded or displayed.
+See [agent architecture and evaluation](docs/AGENT.md), [deployment](docs/DEPLOYMENT.md), and [Devpost preparation](docs/DEVPOST.md). **How this journey was built** is collapsed by default and generated from backend records. It includes the user’s own submitted context, but no system prompt, raw tool messages or internal reasoning. Explanation data stays with the journey in page memory; it is not stored as a user profile. Internal factual event callbacks support diagnostics.
 
 ## Licence and sources
 

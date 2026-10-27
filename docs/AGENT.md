@@ -41,6 +41,10 @@ Record relevance, useful surprise and explanation trust on a 1–5 scale; record
 
 Success gates: zero invented IDs or exclusion/keep violations; consistent usable three-category results when Qloo supplies candidates; no unsupported explanation claims in the reviewed sample; demonstrable benefit on surprise/context/feedback without an unacceptable latency or failure increase. Report the actual sample size and disagreements. If the agent does not improve the experience, adjust its prompt/strategy and repeat. An LLM-only comparator can be added later, but it must not be presented as a verified Qloo result.
 
-## Deferred journey explanation view
+## Journey explanation view
 
-The next UI phase can display factual tool events: which selected signals were used, which categories were queried, whether a second query was needed, and which picks were kept. The current diagnostic callback exposes only category/count events. Do not display hidden reasoning, full prompts, secrets, private context, or fabricated search steps. Design that view after the live agent and basic experience pass acceptance.
+The compact, native expandable view displays the brief submitted for that edition, category searches in request order, their actual taste signals and ranking windows, success/failure, usable candidate counts, and the source search for each final pick. Kept discoveries are marked separately and are not counted as newly retrieved candidates. The total counts distinct candidate IDs; per-search counts may overlap. Invalid or duplicate tool requests that never executed are not presented as searches.
+
+The user’s own optional context is displayed only in their journey response. No system instructions, raw tool bodies, credentials, hidden reasoning or fabricated search steps are exposed. Nothing is added to a persistent profile or logged by this view. The separate diagnostic callback continues to expose only category/count events.
+
+On 27 October 2026, a live production-build browser check starting from William Onyeabor returned three picks after a failed initial music query and a follow-up retrieval using a discovered book. The explanation matched all six actual searches, the failure/recovery, 54 unique candidates and the source query of each final pick. This validates that run, not a general claim of better recommendation quality.

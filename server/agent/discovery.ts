@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Medium } from '../../shared/catalog.js';
-import type { Journey, JourneyStop } from '../../shared/contracts.js';
+import type { Journey, JourneyStop, JourneyReference, JourneySearch } from '../../shared/contracts.js';
 import { DiscoveryError, type RecommendationProvider } from '../providers/provider.js';
 import type { QlooCandidate, QlooProvider } from '../providers/qloo.js';
 import type { AgentModel, ModelMessage } from './model.js';
@@ -65,13 +65,16 @@ export function createDiscoveryAgent(qloo: QlooProvider, model: AgentModel,
       const timeout = AbortSignal.timeout(options.timeoutMs ?? 75000);
       const signal = parentSignal ? AbortSignal.any([parentSignal, timeout]) : timeout;
       try {
+        const reference = (item: QlooCandidate): JourneyReference => ({ id: item.id, title: item.title, medium: item.medium });
         const compact = (item: QlooCandidate) => ({ id: item.id, title: item.title.slice(0, 160), medium: item.medium,
           creator: item.creator.slice(0, 160), tags: item.tags.slice(0, 6).map(tag => tag.slice(0, 70)), description: item.description.slice(0, 350) });
         const brief = { favourites: input.favouriteIds.map(id => compact(lookup(id))), disliked: (input.dislikedIds ?? []).map(id => compact(lookup(id))),
           known: (input.knownIds ?? []).map(id => compact(lookup(id))), adventure: input.adventure, context: input.context || '', revision: input.revision,
           feedback: Object.entries(input.feedback).map(([id, action]) => ({ item: compact(lookup(id)), action })), keptIds: kept.map(item => item.id) };
         const messages: ModelMessage[] = [{ role: 'system', content: instructions }, { role: 'user', content: JSON.stringify(brief) }];
-        const pool = new Map<string, { item: QlooCandidate; signals: QlooCandidate[] }>();
+        const pool = new Map<string, { item: QlooCandidate; signals: QlooCandidate[]; searchNumber: number }>();
+        const searches: JourneySearch[] = [];
+        let round = 0;
         const attempted = new Set<Medium>();
         const failures = new Set<Medium>();
         const seenQueries = new Set<string>();
@@ -94,16 +97,24 @@ export function createDiscoveryAgent(qloo: QlooProvider, model: AgentModel,
               if (!valid) result = { error: 'Signals must be positive starting points, kept discoveries, or candidates returned in this run.' };
               else if (unchangedFarther) result = { error: 'For a category marked farther, change the signal subset, use a returned bridge, or explore offset 12/24.' };
               else {
+                round++;
                 result = await Promise.all(parsed.data.queries.map(async query => {
                   const signature = JSON.stringify({ ...query, signalIds: [...new Set(query.signalIds)].sort() });
                   if (seenQueries.has(signature)) return { medium: query.medium, error: 'Already explored. Change signals or ranking window.' };
                   seenQueries.add(signature); queries++; attempted.add(query.medium);
+                  // Capture the actual tool arguments before awaiting the response.
+                  // Ordering follows requested searches, not network completion order.
+                  const signals = query.signalIds.map(id => allowedSignals.get(id)!);
+                  const search: JourneySearch = { number: queries, round, medium: query.medium, offset: query.offset,
+                    signals: signals.map(item => ({ ...reference(item), source: kept.some(keep => keep.id === item.id) ? 'kept'
+                      : input.favouriteIds.includes(item.id) ? 'favourite' : 'discovery' })), status: 'unavailable', candidateCount: 0 };
+                  searches.push(search);
                   try {
                     const candidates = await qloo.recommend({ ...query, excludeIds: [...excluded] }, signal);
                     signal.throwIfAborted();
                     const safe = candidates.filter(item => item.medium === query.medium && !excluded.has(item.id));
-                    const signals = query.signalIds.map(id => allowedSignals.get(id)!);
-                    for (const item of safe) { if (!pool.has(item.id)) pool.set(item.id, { item, signals }); allowedSignals.set(item.id, item); }
+                    search.status = 'ok'; search.candidateCount = safe.length;
+                    for (const item of safe) { if (!pool.has(item.id)) pool.set(item.id, { item, signals, searchNumber: search.number }); allowedSignals.set(item.id, item); }
                     failures.delete(query.medium);
                     options.onEvent?.({ stage: 'explore', category: query.medium, count: safe.length });
                     return { medium: query.medium, signals: query.signalIds, offset: query.offset, candidates: safe.map(compact) };
@@ -138,6 +149,15 @@ export function createDiscoveryAgent(qloo: QlooProvider, model: AgentModel,
                 options.onEvent?.({ stage: 'finish', count: stops.length });
                 return { source: 'qloo', method: 'agent', status: failures.size ? 'degraded' : stops.length === 3 ? 'ok' : stops.length ? 'partial' : 'empty',
                   title: parsed.data.title, summary: parsed.data.summary, stops,
+                  explanation: {
+                    brief: { favourites: input.favouriteIds.map(id => reference(lookup(id))),
+                      disliked: (input.dislikedIds ?? []).map(id => reference(lookup(id))), known: (input.knownIds ?? []).map(id => reference(lookup(id))),
+                      adventure: input.adventure, context: input.context || '',
+                      feedback: Object.entries(input.feedback).map(([id, action]) => ({ item: reference(lookup(id)), action })) },
+                    searches, uniqueCandidates: pool.size,
+                    selections: stops.map(item => ({ item: reference(item), kept: kept.some(keep => keep.id === item.id),
+                      ...(!kept.some(keep => keep.id === item.id) ? { searchNumber: pool.get(item.id)!.searchNumber } : {}) })),
+                  },
                   notices: failures.size ? ['Some Qloo categories were unavailable. The agent used the verified results it could retrieve.']
                     : stops.length < 3 ? ['There were not enough available Qloo candidates for every category. Try different starting points.'] : [] } satisfies Journey;
               }

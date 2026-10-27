@@ -49,6 +49,12 @@ test('agent chooses queries, inspects Qloo results and refines an empty category
   assert.deepEqual(f.requests[3].signalIds, [picks[1].id]);
   assert.match(journey.stops[2].connection, /Title 20/);
   assert.equal(journey.stops[2].description, picks[2].description);
+  assert(journey.explanation);
+  assert.deepEqual(journey.explanation.searches.map(search => [search.number, search.round, search.medium, search.candidateCount]),
+    [[1, 1, 'Music', 1], [2, 1, 'Film', 1], [3, 1, 'Book', 0], [4, 2, 'Book', 1]]);
+  assert.equal(journey.explanation.searches[3].signals[0].source, 'discovery');
+  assert.equal(journey.explanation.selections[2].searchNumber, 4);
+  assert.equal(journey.explanation.uniqueCandidates, 3);
 });
 test('kept book is retained and becomes a signal; more adventurous music is excluded and explored further', async () => {
   const nextMusic = candidate(11, 'Music');
@@ -63,6 +69,11 @@ test('kept book is retained and becomes a signal; more adventurous music is excl
   assert.equal(f.requests.some(q => q.medium === 'Book'), false);
   assert(f.requests.every(q => q.excludeIds.includes(picks[0].id)));
   assert.match(journey.stops[2].connection, /^Kept/);
+  assert(journey.explanation);
+  assert.deepEqual(journey.explanation.selections[2], { item: { id: picks[2].id, title: picks[2].title, medium: 'Book' }, kept: true });
+  assert.equal(journey.explanation.searches[0].signals[1].source, 'kept');
+  assert.equal(journey.explanation.brief.feedback.find(entry => entry.action === 'farther')?.item.medium, 'Music');
+  assert.equal(journey.explanation.uniqueCandidates, 2);
 });
 test('known and disliked items stay distinct in the brief and both are excluded even if upstream returns them', async () => {
   const dislike = candidate(2, 'Music'), known = candidate(3, 'Music');
@@ -76,6 +87,10 @@ test('known and disliked items stay distinct in the brief and both are excluded 
   const journey = await f.agent.createJourney({ ...input, dislikedIds: [dislike.id], knownIds: [known.id], context: 'A quiet evening.' });
   assert.equal(journey.status, 'ok');
   assert(f.requests.every(q => [seed.id, dislike.id, known.id].every(value => q.excludeIds.includes(value))));
+  assert.equal(journey.explanation?.brief.context, 'A quiet evening.');
+  assert.equal(journey.explanation?.brief.known[0].id, known.id);
+  assert.equal(journey.explanation?.brief.disliked[0].id, dislike.id);
+  assert.deepEqual(journey.explanation?.searches.map(search => search.candidateCount), [1, 1, 1]);
 });
 test('unknown final IDs, omitted categories and dropping a kept stop are rejected and can be corrected', async () => {
   const f = fixture([finish(), explore([query('Music'), query('Film')]), finish([candidate(99, 'Music'), picks[1], picks[2]]),
@@ -146,9 +161,29 @@ test('partial Qloo failure is visible; empty results are not invented', async ()
   } });
   const journey = await f.agent.createJourney(input);
   assert.equal(journey.status, 'degraded'); assert.equal(journey.stops.length, 2);
+  assert.equal(journey.explanation?.searches[2].status, 'unavailable');
+  assert.equal(journey.explanation?.searches[2].candidateCount, 0);
+  assert(!JSON.stringify(journey.explanation).includes('Private upstream detail'));
   assert(!JSON.stringify(f.histories).includes('Private upstream detail'));
   const empty = fixture([explore(), finish([])], { recommend: async () => [] });
   assert.equal((await empty.agent.createJourney(input)).status, 'empty');
+});
+test('explanation counts distinct candidates once and records only executed searches', async () => {
+  const f = fixture([explore(), explore(), explore(picks.map(item => query(item.medium, [seed.id], 12))), finish()]);
+  const journey = await f.agent.createJourney(input);
+  assert(journey.explanation);
+  assert.equal(journey.explanation.searches.length, 6);
+  assert.equal(journey.explanation.searches.reduce((sum, search) => sum + search.candidateCount, 0), 6);
+  assert.equal(journey.explanation.uniqueCandidates, 3);
+  assert.deepEqual(journey.explanation.selections.map(selection => selection.searchNumber), [1, 2, 3]);
+  assert.deepEqual(journey.explanation.searches.map(search => search.signals.map(item => item.id)), f.requests.map(request => request.signalIds));
+});
+test('all-kept journey explanation invents neither new searches nor new candidates', async () => {
+  const f = fixture([finish()]);
+  const journey = await f.agent.createJourney({ ...input, feedback: Object.fromEntries(picks.map(item => [item.id, 'love' as const])) });
+  assert.equal(journey.explanation?.uniqueCandidates, 0);
+  assert.deepEqual(journey.explanation?.searches, []);
+  assert(journey.explanation?.selections.every(selection => selection.kept && selection.searchNumber === undefined));
 });
 test('cancellation after a model response stops all following tools', async () => {
   const controller = new AbortController();
